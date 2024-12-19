@@ -5,6 +5,13 @@ import json
 import sqlite3
 import numpy as np
 
+# variables
+movie_obj_list = []
+##  connect to db and create cursor
+db = sqlite3.connect("Top-250-movies.db")
+cursor = db.cursor()
+
+# Functions
 def time(duration):
     try:
         duration = duration.strip("PTM")
@@ -17,9 +24,8 @@ def time(duration):
             return int(duration[0]) * 60
     except Exception as error:
         print("time function error " + str(error))
-#  connect to db and create cursor
-db = sqlite3.connect("Top-250-movies.db")
-cursor = db.cursor()
+
+
 # create table if table does not exist. 
 try:
     cursor.execute("CREATE TABLE movies (id INTEGER PRIMARY KEY, title varchar(255) NOT NULL UNIQUE, year INTEGER NOT NULL , description varchar(255), rating FLOAT NOT NULL,"
@@ -33,8 +39,6 @@ except Exception as error:
 
 # URL for top 250 movies list from imdb
 TOP_250_MOVIES = "https://www.imdb.com/chart/top/?ref_=nv_mv_250"
-
-movie_obj_list = []
 
 # sets the session header to get access 
 with requests.Session() as se:
@@ -89,15 +93,19 @@ while True:
             try:
 
                 numpy_array = np.array(json_data["itemListElement"])
-                # print(numpy_array[0]['item'])
+                # loop through the movie list and append movie_ob_list with newly created movie objects
                 for i in range(len(numpy_array)):
+
+                    # debugging tool to be deleted
                     if i == 203:
                         pass
+                    # debugging tool to be deleted
                     movie = numpy_array[i]['item']
                     ratings = movie['aggregateRating']
+                    # some movies are missing content rating so this sets those to N/A
                     content_rating = movie.get('contentRating', 'N/A')
                     
-                    # print(movie)
+                    # appending movie objects to list 
                     movie_obj_list.append(Movie(
                         i,
                         movie['name'],
@@ -112,22 +120,8 @@ while True:
                         time(movie['duration']),
                         movie['url']
                     ))
-                    # print(movie['name'])
-                    # a == Movie(
-                    #     i,
-                    #     movie['name'],
-                    #     0,
-                    #     movie['description'],
-                    #     movie['rating'],
-                    #     movie['bestRating'],
-                    #     movie['worstRating'],
-                    #     movie['ratingCount'],
-                    #     movie['contentRating'],
-                    #     movie['genre'],
-                    #     time(movie['duration']),
-                    #     movie['url']
-                    # )
-                print(movie_obj_list[0].title)
+                    
+                
                     
             except Exception as error:
                 print(error)
