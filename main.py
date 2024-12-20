@@ -4,11 +4,14 @@ import requests
 import json
 import sqlite3
 import numpy as np
+import pandas as pd 
+import matplotlib.pyplot as plt
+from collections import Counter
 
 # variables
 movie_obj_list = []
 ##  connect to db and create cursor
-db = sqlite3.connect("Top-250-movies.db")
+db = sqlite3.connect("movies.db")
 cursor = db.cursor()
 
 # Functions
@@ -27,15 +30,16 @@ def time(duration):
 
 
 # create table if table does not exist. 
-try:
-    cursor.execute("CREATE TABLE movies (id INTEGER PRIMARY KEY, title varchar(255) NOT NULL UNIQUE, year INTEGER NOT NULL , description varchar(255), rating FLOAT NOT NULL,"
-                    "bestRating FLOAT NOT NULL , lowestRating FLOAT NOT NULL, ratingCount INTEGER NOT NULL, contentRating varchar(50) NOT NULL, "
-                    "genre varchar(255) NOT NULL, duration INTEGER NOT NULL, url varchar(255) NOT NULL )")
-except Exception as error:
-    if 'already exists' in str(error):
-        pass
-    else:
-        print(error)
+def createTable(table):
+    try:
+        cursor.execute(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, title varchar(255) NOT NULL UNIQUE, year INTEGER NOT NULL , description varchar(255), rating FLOAT NOT NULL,"
+                        "bestRating FLOAT NOT NULL , lowestRating FLOAT NOT NULL, ratingCount INTEGER NOT NULL, contentRating varchar(50) NOT NULL, "
+                        "genre varchar(255) NOT NULL, duration INTEGER NOT NULL, url varchar(255) NOT NULL )")
+    except Exception as error:
+        if 'already exists' in str(error):
+            pass
+        else:
+            print(error)
 
 # URL for top 250 movies list from imdb
 TOP_250_MOVIES = "https://www.imdb.com/chart/top/?ref_=nv_mv_250"
@@ -64,7 +68,7 @@ class Movie:
         self.genre = genre
         self.duration = int(duration)
         self.url = url
-
+createTable("movies")
 
 
 while True:
@@ -88,14 +92,41 @@ while True:
         case "load":
             with open('output.json','r') as file:
                 json_data = json.load(file)
-        # updates the db based on data scraped (local/url)
-        case "update":
+        case "init":
             try:
-
                 numpy_array = np.array(json_data["itemListElement"])
                 # loop through the movie list and append movie_ob_list with newly created movie objects
                 for i in range(len(numpy_array)):
-
+                    movie = numpy_array[i]['item']
+                    ratings = movie['aggregateRating']
+                    # some movies are missing content rating so this sets those to N/A
+                    content_rating = movie.get('contentRating', 'N/A')
+                    try:
+                        cursor.execute("INSERT INTO movies (id, title, year, description, rating, bestRating, lowestRating, ratingCount, contentRating, genre, duration, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",(
+                            i,
+                            movie['name'],
+                            0,
+                            movie['description'],
+                            ratings['ratingValue'],
+                            ratings['bestRating'],
+                            ratings['worstRating'],
+                            ratings['ratingCount'],
+                            content_rating,
+                            movie['genre'],
+                            time(movie['duration']),
+                            movie['url']
+                        ))
+                        db.commit()
+                    except sqlite3.IntegrityError as error:
+                        print(error)
+            except Exception as error:
+                print(error)
+        # updates the db based on data scraped (local/url)
+        case "update":
+            try:
+                numpy_array = np.array(json_data["itemListElement"])
+                # loop through the movie list and append movie_ob_list with newly created movie objects
+                for i in range(len(numpy_array)):
                     # debugging tool to be deleted
                     if i == 203:
                         pass
@@ -104,10 +135,8 @@ while True:
                     ratings = movie['aggregateRating']
                     # some movies are missing content rating so this sets those to N/A
                     content_rating = movie.get('contentRating', 'N/A')
-                    
-                    # appending movie objects to list 
-                    movie_obj_list.append(Movie(
-                        i,
+                    # update the db with the new data
+                    cursor.execute("UPDATE movies SET title = ?, year = ?, description = ?, rating = ?, bestRating = ?, lowestRating = ?, ratingCount = ?, contentRating = ?, genre = ?, duration = ?, url = ? WHERE id = ?",(
                         movie['name'],
                         0,
                         movie['description'],
@@ -118,13 +147,65 @@ while True:
                         content_rating,
                         movie['genre'],
                         time(movie['duration']),
-                        movie['url']
+                        movie['url'],
+                        i
                     ))
-                    
-                
-                    
+                    db.commit()
             except Exception as error:
                 print(error)
         # creates table in db if not present
-        case "create table":
-            pass
+        case "test":
+            print(movie_obj_list[0].title)
+
+        case "exit":
+            db.close()
+            # Exit the program
+            exit()
+
+        # Drop the specified table and recreate it
+        case "drop":
+            table = input("Enter table name: ")
+            try:
+                # Drop the table
+                cursor.execute(f"DROP TABLE {table}")
+                db.commit()
+                # Recreate the table
+                createTable(table)
+            except sqlite3.DatabaseError as error:
+                print(error)
+            
+
+    # get the number of genres and list in histogram for possible comparison
+
+        case "get genres":
+            cursor.execute("SELECT genre FROM movies")
+            genres = cursor.fetchall()
+            genre_list = []
+            for genre in genres:
+                genre_split = genre[0].split(",")
+                for genre_item in genre_split:
+                    genre_item = genre_item.strip(' ')
+                    genre_list.append(genre_item)
+
+            # Count the occurrences of each genre
+            genre_counts = Counter(genre_list)
+            
+            # Extract genres and their counts
+            genres = list(genre_counts.keys())
+            counts = list(genre_counts.values())
+            
+            # Set figure size
+            plt.figure(figsize=(12, 8))
+            # Create bar plot
+            plt.bar(genres, counts)
+            # Rotate x-axis labels
+            plt.xticks(rotation=45, ha='right')
+            # Add labels and title
+            plt.xlabel('Genre')
+            plt.ylabel('Count')
+            plt.title('Distribution of Movie Genres')
+            # informs user of the most common genre
+            print(f"From the graph, we can observe that {genres[counts.index(max(counts))]} is the most common genre in the top 250 movies list.")
+            # Show plot
+            plt.show()
+            
